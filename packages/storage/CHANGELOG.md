@@ -1,5 +1,39 @@
 # @cavemem/storage
 
+## 0.3.0
+
+### Patch Changes
+
+- a52553d: fix(storage,cli): bump better-sqlite3 to ^12.0.0 for Node 26 (#37)
+
+  Node 26 removed three V8 C++ APIs (`v8::Object::GetPrototype`,
+  `v8::Context::GetIsolate`, `v8::PropertyCallbackInfo<T>::This`) that
+  better-sqlite3 ≤11.x relied on, so `npm install -g cavemem` fails with
+  `error C2039: 'GetPrototype': is not a member of 'v8::Object'` when there
+  is no prebuilt binary for the target Node ABI. better-sqlite3 v12 rewrites
+  those call sites and ships prebuilts for Node 20 through 26. The Storage
+  API surface used by this repo (`prepare`, `run`, `get`, `all`, `exec`,
+  FTS5, `bm25`, `snippet`, blob storage) is identical across v11 → v12, so
+  no code changes are needed.
+
+- 711f5b6: fix(hooks,storage): scope session-start prior-session context to current cwd (#39)
+
+  The `session-start` hook surfaced "Prior-session context" pulled from the
+  most recent N sessions across **all** projects on the machine. Opening
+  Claude Code in project A could inject summaries from last night's project B
+  session into the new kickoff, even though every session row already stores
+  `cwd`. Now `session-start.ts` widens the initial lookup from 4 → 20 and
+  filters by exact-`cwd` match before picking the top 3, falling back to the
+  old global behaviour only when the payload contains no `cwd` (so non-Claude
+  Code IDEs are unaffected).
+
+  `Storage.searchFts(query, limit, cwd?)` also gained an optional `cwd`
+  parameter that joins `sessions` and restricts hits to that project; default
+  behaviour without `cwd` is unchanged.
+
+- Updated dependencies [f2e2f49]
+  - @cavemem/config@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

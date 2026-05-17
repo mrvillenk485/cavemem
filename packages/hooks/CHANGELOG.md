@@ -1,5 +1,37 @@
 # @cavemem/hooks
 
+## 0.3.0
+
+### Patch Changes
+
+- 711f5b6: fix(hooks,storage): scope session-start prior-session context to current cwd (#39)
+
+  The `session-start` hook surfaced "Prior-session context" pulled from the
+  most recent N sessions across **all** projects on the machine. Opening
+  Claude Code in project A could inject summaries from last night's project B
+  session into the new kickoff, even though every session row already stores
+  `cwd`. Now `session-start.ts` widens the initial lookup from 4 → 20 and
+  filters by exact-`cwd` match before picking the top 3, falling back to the
+  old global behaviour only when the payload contains no `cwd` (so non-Claude
+  Code IDEs are unaffected).
+
+  `Storage.searchFts(query, limit, cwd?)` also gained an optional `cwd`
+  parameter that joins `sessions` and restricts hits to that project; default
+  behaviour without `cwd` is unchanged.
+
+- 33824f1: fix(cli,hooks): hide Windows console window on detached worker spawn (#11)
+
+  All four detached `child_process.spawn` sites (lifecycle `start`/`viewer`,
+  `worker start`, and the hooks auto-spawn path) now pass `windowsHide: true`.
+  Without this, `CreateProcess` on Windows pops a visible console window for
+  each detached child, which on some setups blocks `cavemem start` and every
+  hook auto-spawn. POSIX platforms ignore the option, so no behaviour change
+  on macOS/Linux.
+
+- Updated dependencies [f2e2f49]
+  - @cavemem/config@0.3.0
+  - @cavemem/core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

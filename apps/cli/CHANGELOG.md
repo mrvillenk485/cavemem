@@ -1,5 +1,96 @@
 # cavemem
 
+## 0.3.0
+
+### Minor Changes
+
+- f2e2f49: Issue sweep: fix six bugs across config, installers, and embedding.
+
+  - **config (#25):** Correct the inverted description for `search.alpha`. The
+    ranker computes `alpha * bm25 + (1 - alpha) * cosine`, so `1 = pure BM25`
+    and `0 = pure cosine`. Doc-only — no behavior change.
+  - **installers/claude-code (#19):** Write the cavemem MCP server entry to
+    `~/.claude.json` instead of `~/.claude/settings.json`. Newer Claude Code
+    reads MCP config from `~/.claude.json`; the previous location was silently
+    ignored. Hooks continue to live in `~/.claude/settings.json`. Legacy
+    `mcpServers.cavemem` entries in `settings.json` are migrated out on
+    install.
+  - **installers/claude-code (#12):** Stop overwriting pre-existing entries in
+    `hooks.SessionStart` / `PostToolUse` / etc. The installer now appends
+    cavemem's hook to whatever is already there and writes a one-shot
+    `settings.json.pre-cavemem-<unix-ts>` backup before mutating a file with
+    prior hooks. Re-running install no longer duplicates cavemem entries.
+  - **installers/codex (#17):** Switch from `~/.codex/config.json` (which
+    Codex never read) to `~/.codex/config.toml` with the `[features]
+codex_hooks = true` flag and an `[mcp_servers.cavemem]` table. Also write
+    `~/.codex/hooks.json` with `SessionStart` / `UserPromptSubmit` /
+    `PostToolUse` / `Stop` entries so observations are actually captured.
+    Adds `smol-toml` as a dependency (bundled into the CLI dist).
+  - **installers/opencode (#14):** Drop a generated plugin at
+    `~/.config/opencode/plugins/cavemem.js` that hooks into
+    `session.created` / `session.idle` / `tool.execute.before` /
+    `tool.execute.after` and forwards to `cavemem hook run …`. Previously the
+    installer only registered an MCP server and no hooks fired at all, so
+    observations were empty. Plugin is registered in `opencode.json` and
+    uses detached `child_process.spawn` so the IDE never blocks on a hook.
+    Path migrated to OpenCode's documented global config location
+    (`~/.config/opencode/`, honoring `XDG_CONFIG_HOME`).
+  - **embedding (#20):** Detect musl libc (Alpine, musl-built Node) before
+    importing `@xenova/transformers`. The bundled `onnxruntime-node` prebuilts
+    target glibc and have segfaulted on Alpine in the wild; we now throw a
+    clean error pointing at `embedding.provider: 'none' | 'ollama'`.
+
+### Patch Changes
+
+- a52553d: fix(storage,cli): bump better-sqlite3 to ^12.0.0 for Node 26 (#37)
+
+  Node 26 removed three V8 C++ APIs (`v8::Object::GetPrototype`,
+  `v8::Context::GetIsolate`, `v8::PropertyCallbackInfo<T>::This`) that
+  better-sqlite3 ≤11.x relied on, so `npm install -g cavemem` fails with
+  `error C2039: 'GetPrototype': is not a member of 'v8::Object'` when there
+  is no prebuilt binary for the target Node ABI. better-sqlite3 v12 rewrites
+  those call sites and ships prebuilts for Node 20 through 26. The Storage
+  API surface used by this repo (`prepare`, `run`, `get`, `all`, `exec`,
+  FTS5, `bm25`, `snippet`, blob storage) is identical across v11 → v12, so
+  no code changes are needed.
+
+- 711f5b6: fix(hooks,storage): scope session-start prior-session context to current cwd (#39)
+
+  The `session-start` hook surfaced "Prior-session context" pulled from the
+  most recent N sessions across **all** projects on the machine. Opening
+  Claude Code in project A could inject summaries from last night's project B
+  session into the new kickoff, even though every session row already stores
+  `cwd`. Now `session-start.ts` widens the initial lookup from 4 → 20 and
+  filters by exact-`cwd` match before picking the top 3, falling back to the
+  old global behaviour only when the payload contains no `cwd` (so non-Claude
+  Code IDEs are unaffected).
+
+  `Storage.searchFts(query, limit, cwd?)` also gained an optional `cwd`
+  parameter that joins `sessions` and restricts hits to that project; default
+  behaviour without `cwd` is unchanged.
+
+- 33824f1: fix(cli,hooks): hide Windows console window on detached worker spawn (#11)
+
+  All four detached `child_process.spawn` sites (lifecycle `start`/`viewer`,
+  `worker start`, and the hooks auto-spawn path) now pass `windowsHide: true`.
+  Without this, `CreateProcess` on Windows pops a visible console window for
+  each detached child, which on some setups blocks `cavemem start` and every
+  hook auto-spawn. POSIX platforms ignore the option, so no behaviour change
+  on macOS/Linux.
+
+- bf71913: fix(installers): quote Windows paths in hook commands even without spaces (#41)
+
+  `shellQuote` previously treated `\` as a bare-token character, so a default
+  Windows install path with no spaces was written unquoted into the hook
+  `command` string in `~/.claude/settings.json`. When Claude Code on Windows
+  runs the hook through MSYS-bash, unquoted backslashes are treated as escape
+  introducers and stripped, mangling the path
+  `C:\Users\...\node_modules\cavemem\dist\index.js` into
+  `CUsers...node_modulescavememdistindex.js` and the hook fails with
+  `MODULE_NOT_FOUND`. After this fix, any path containing a backslash gets
+  wrapped in double quotes; both cmd.exe and MSYS-bash preserve the
+  backslashes verbatim inside `"..."`. POSIX paths are unaffected.
+
 ## 0.2.1
 
 ### Patch Changes
